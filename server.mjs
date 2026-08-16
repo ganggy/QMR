@@ -179,10 +179,10 @@ async function loadMedications(recordType, ref, fallbackDate='') {
   const limit=recordType==='IPD'?1000:200;
   let rows;
   try{
-    rows=await hosQuery(`SELECT oi.icode,oi.qty,oi.unitprice,oi.item_type,oi.drugusage,COALESCE(oi.rxdate,oi.vstdate) event_date,'' event_time FROM opitemrece oi WHERE oi.${key}=? ORDER BY oi.item_no,oi.icode LIMIT ${limit}`,[ref]);
+    rows=await hosQuery(`SELECT oi.icode,oi.qty,oi.unitprice,oi.item_type,oi.income,oi.drugusage,COALESCE(oi.rxdate,oi.vstdate) event_date,'' event_time FROM opitemrece oi WHERE oi.${key}=? ORDER BY oi.item_no,oi.icode LIMIT ${limit}`,[ref]);
   }catch(error){
     console.error(`[HOSxP medication-date fallback] ${error.code||'ERROR'}: ${error.message}`);
-    try{rows=await hosQuery(`SELECT oi.icode,oi.qty,oi.unitprice,oi.item_type,oi.drugusage FROM opitemrece oi WHERE oi.${key}=? LIMIT ${limit}`,[ref])}
+    try{rows=await hosQuery(`SELECT oi.icode,oi.qty,oi.unitprice,oi.item_type,oi.income,oi.drugusage FROM opitemrece oi WHERE oi.${key}=? LIMIT ${limit}`,[ref])}
     catch(fallbackError){console.error(`[HOSxP medication-core fallback] ${fallbackError.code||'ERROR'}: ${fallbackError.message}`);rows=await hosQuery(`SELECT oi.icode,oi.qty,oi.unitprice FROM opitemrece oi WHERE oi.${key}=? LIMIT ${limit}`,[ref])}
   }
   const catalogs=await loadItemCatalogs(rows.map(row=>row.icode));
@@ -195,10 +195,13 @@ async function loadMedications(recordType, ref, fallbackDate='') {
   });
 }
 
-async function loadLabs(vn, limit=500) {
-  if(!vn)return [];
-  return optionalHos('labs',()=>hosQuery(`
+async function loadLabs(vn, limit=500, an='') {
+  const visitKeys=[...new Set([vn,an].map(String).filter(Boolean))];
+  if(!visitKeys.length)return [];
+  const select=`
     SELECT
+      lh.lab_order_number,
+      lo.lab_items_code,
       lh.order_date date,
       lh.order_time event_time,
       li.lab_items_name name,
@@ -207,11 +210,10 @@ async function loadLabs(vn, limit=500) {
       lo.abnormal_result
     FROM lab_head lh
     JOIN lab_order lo ON lo.lab_order_number=lh.lab_order_number
-    JOIN lab_items li ON li.lab_items_code=lo.lab_items_code
-    WHERE lh.vn=?
-    ORDER BY lh.order_date,lh.order_time,li.display_order
-    LIMIT ${limit}
-  `,[vn]));
+    JOIN lab_items li ON li.lab_items_code=lo.lab_items_code`;
+  const byVn=await optionalHos('labs-by-vn',()=>hosQuery(`${select} WHERE lh.vn IN (${visitKeys.map(()=>'?').join(',')}) ORDER BY lh.order_date,lh.order_time,li.display_order LIMIT ${limit}`,visitKeys));
+  const byAn=an?await optionalHos('labs-by-an',()=>hosQuery(`${select} WHERE lh.an=? ORDER BY lh.order_date,lh.order_time,li.display_order LIMIT ${limit}`,[an])):[];
+  return [...new Map([...byVn,...byAn].map(row=>[`${row.lab_order_number}:${row.lab_items_code}`,row])).values()];
 }
 
 const DEMO_CASES=[
@@ -223,8 +225,8 @@ const DEMO_CASES=[
 function demoDetail(kind,ref) {
   const item=DEMO_CASES.find(x=>x.type===kind&&x.ref_no===ref)||DEMO_CASES[0];
   const addDays=(date,days)=>new Date(new Date(`${date}T00:00:00Z`).getTime()+days*86400000).toISOString().slice(0,10);
-  const medications=[{name:'Paracetamol 500 mg',usage:'1 เม็ด เมื่อมีไข้ ทุก 6 ชั่วโมง',qty:'10',event_date:item.visit_date},{name:'Amoxicillin 500 mg',usage:'1 แคปซูล วันละ 3 ครั้ง หลังอาหาร',qty:'21',event_date:kind==='IPD'?addDays(item.visit_date,1):item.visit_date}];
-  const labs=[{name:'CBC',result:'WBC 8,900 /µL',date:kind==='IPD'?addDays(item.visit_date,2):item.visit_date}];
+  const medications=[{icode:'D001',name:'Paracetamol 500 mg',usage:'1 เม็ด เมื่อมีไข้ ทุก 6 ชั่วโมง',qty:'10',item_type:'1',income:'01',event_date:item.visit_date},{icode:'D002',name:'Amoxicillin 500 mg',usage:'1 แคปซูล วันละ 3 ครั้ง หลังอาหาร',qty:'21',item_type:'1',income:'01',event_date:kind==='IPD'?addDays(item.visit_date,1):item.visit_date},{icode:'L001',name:'ตรวจความสมบูรณ์ของเม็ดเลือด (CBC)',usage:'-',qty:'1',item_type:'3',income:'03',event_date:kind==='IPD'?addDays(item.visit_date,2):item.visit_date}];
+  const labs=[{name:'CBC',result:'WBC 8,900 /µL',normal_value:'4,000–10,000 /µL',abnormal_result:'N',date:kind==='IPD'?addDays(item.visit_date,2):item.visit_date}];
   const timeline=kind==='IPD'?[{event_date:item.visit_date,event_time:'10:15',title:'รับผู้ป่วยเข้า Admit',detail:item.department},{event_date:addDays(item.visit_date,2),event_time:'09:30',title:'ย้ายเตียง/หอผู้ป่วย',detail:'ติดตามอาการต่อเนื่อง'},{event_date:addDays(item.visit_date,3),event_time:'',title:'จำหน่ายผู้ป่วย',detail:'ระยะเวลานอน 3 วัน'}]:[];
   return {...item,age:'42 ปี',sex:item.patient_name.includes('นาง')?'หญิง':'ชาย',rights:'สิทธิหลักประกันสุขภาพแห่งชาติ',chief_complaint:'ไข้ ไอ มีเสมหะ 2 วันก่อนมาโรงพยาบาล',present_illness:'2 วันก่อนมา มีไข้ต่ำ ไอมีเสมหะ ไม่มีหอบเหนื่อย รับประทานอาหารได้',vitals:{temperature:'37.8',pulse:'92',respiration:'20',bp:'128/76',weight:'58',height:'160'},diagnoses:[{code:'J06.9',name:'Acute upper respiratory infection, unspecified',type:'Principal'}],medications,labs,timeline,admit:kind==='IPD'?{regdate:item.visit_date,dchdate:addDays(item.visit_date,3),los:'3',ward:item.department}:null};
 }
@@ -260,7 +262,7 @@ async function caseDetail(kind,ref){
   const admitVn=(await optionalHos('ipt-vn',()=>hosQuery('SELECT vn FROM ipt WHERE an=? LIMIT 1',[ref])))[0]?.vn||'';
   r.diagnoses=await hosQuery("SELECT id.icd10 code,COALESCE(ic.name,'') name,id.diagtype type FROM iptdiag id LEFT JOIN icd101 ic ON ic.code=id.icd10 WHERE id.an=?",[ref]);
   r.medications=await loadMedications('IPD',ref,r.admit.regdate);
-  r.labs=await loadLabs(admitVn);
+  r.labs=await loadLabs(admitVn,500,ref);
   r.timeline=await optionalHos('bed-moves',()=>hosQuery(`SELECT bm.movedate event_date,bm.movetime event_time,'ย้ายเตียง/หอผู้ป่วย' title,CONCAT(COALESCE(ow.name,bm.oward,'-'),' เตียง ',COALESCE(bm.obedno,'-'),' → ',COALESCE(nw.name,bm.nward,'-'),' เตียง ',COALESCE(bm.nbedno,'-'),CASE WHEN COALESCE(bm.movereason,'')='' THEN '' ELSE CONCAT(' • ',bm.movereason) END) detail FROM iptbedmove bm LEFT JOIN ward ow ON ow.ward=bm.oward LEFT JOIN ward nw ON nw.ward=bm.nward WHERE bm.an=? ORDER BY bm.movedate,bm.movetime`,[ref]));
   r.timeline.unshift({event_date:r.admit.regdate,event_time:'',title:'รับผู้ป่วยเข้า Admit',detail:r.department});
   if(r.admit.dchdate)r.timeline.push({event_date:r.admit.dchdate,event_time:'',title:'จำหน่ายผู้ป่วย',detail:`ระยะเวลานอน ${r.admit.los} วัน`});

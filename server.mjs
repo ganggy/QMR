@@ -135,6 +135,33 @@ async function hosQuery(sql,args=[]) {
   finally { await conn.end(); }
 }
 
+async function loadMedications(recordType, ref) {
+  const key=recordType==='IPD'?'an':'vn';
+  const limit=recordType==='IPD'?150:100;
+  return hosQuery(`
+    SELECT
+      oi.icode,
+      COALESCE(
+        NULLIF(TRIM(sd.name), ''),
+        NULLIF(TRIM(ndi.name), ''),
+        NULLIF(TRIM(di.name), ''),
+        oi.icode
+      ) name,
+      COALESCE(NULLIF(TRIM(du.name1), ''), NULLIF(TRIM(oi.drugusage), ''), '-') usage,
+      oi.qty,
+      oi.unitprice,
+      oi.item_type
+    FROM opitemrece oi
+    LEFT JOIN s_drugitems sd ON sd.icode=oi.icode
+    LEFT JOIN nondrugitems ndi ON ndi.icode=oi.icode
+    LEFT JOIN drugitems di ON di.icode=oi.icode
+    LEFT JOIN drugusage du ON du.code=oi.drugusage
+    WHERE oi.${key}=?
+    ORDER BY oi.item_no,oi.icode
+    LIMIT ${limit}
+  `,[ref]);
+}
+
 const DEMO_CASES=[
  {type:'OPD',ref_no:'690816001234',hn:'00010419',patient_name:'นางสาวอรุณี ใจดี',visit_date:'2026-08-16',department:'อายุรกรรม',doctor_name:'นพ.กิตติพงษ์',status:'รอประเมิน',risk:'ครบถ้วน 78%'},
  {type:'IPD',ref_no:'690001234',hn:'00028741',patient_name:'นายสมชาย พูนสุข',visit_date:'2026-08-12',department:'หอผู้ป่วยชาย',doctor_name:'พญ.ปาริชาติ',status:'กำลังประเมิน',risk:'ควรทบทวน'},
@@ -169,12 +196,12 @@ async function caseDetail(kind,ref){
     const base=await hosQuery(`SELECT 'OPD' type,o.vn ref_no,o.hn,CONCAT(p.pname,p.fname,' ',p.lname) patient_name,TIMESTAMPDIFF(YEAR,p.birthday,CURDATE()) age,p.sex,o.vstdate visit_date,COALESCE(k.department,'OPD') department,COALESCE(d.name,'-') doctor_name,COALESCE(pt.name,'-') rights,os.cc chief_complaint,os.hpi present_illness,os.temperature,os.pulse,os.rr respiration,CONCAT(os.bps,'/',os.bpd) bp,os.bw weight,os.height FROM ovst o JOIN patient p ON p.hn=o.hn LEFT JOIN opdscreen os ON os.vn=o.vn LEFT JOIN doctor d ON d.code=o.doctor LEFT JOIN pttype pt ON pt.pttype=o.pttype LEFT JOIN kskdepartment k ON k.depcode=o.main_dep WHERE o.vn=? LIMIT 1`,[ref]);
     if(!base.length)throw Object.assign(new Error('ไม่พบ VN'),{status:404}); const r=base[0]; r.vitals={temperature:r.temperature,pulse:r.pulse,respiration:r.respiration,bp:r.bp,weight:r.weight,height:r.height}; for(const k of Object.keys(r.vitals))delete r[k];
     r.diagnoses=await hosQuery("SELECT od.icd10 code,COALESCE(ic.name,'') name,od.diagtype type FROM ovstdiag od LEFT JOIN icd101 ic ON ic.code=od.icd10 WHERE od.vn=?",[ref]);
-    r.medications=await hosQuery("SELECT COALESCE(di.name,oi.icode) name,oi.qty,oi.unitprice FROM opitemrece oi LEFT JOIN drugitems di ON di.icode=oi.icode WHERE oi.vn=? LIMIT 100",[ref]);
+    r.medications=await loadMedications('OPD',ref);
     r.labs=await hosQuery('SELECT lh.lab_order_number name,lh.order_date date,lh.report_date result FROM lab_head lh WHERE lh.vn=? ORDER BY lh.order_date DESC LIMIT 50',[ref]); r.timeline=[]; return r;
   }
   const base=await hosQuery(`SELECT 'IPD' type,i.an ref_no,i.hn,CONCAT(p.pname,p.fname,' ',p.lname) patient_name,TIMESTAMPDIFF(YEAR,p.birthday,CURDATE()) age,p.sex,i.regdate visit_date,COALESCE(w.name,'IPD') department,COALESCE(d.name,'-') doctor_name,COALESCE(pt.name,'-') rights,i.regdate,i.dchdate,DATEDIFF(COALESCE(i.dchdate,CURDATE()),i.regdate) los FROM ipt i JOIN patient p ON p.hn=i.hn LEFT JOIN ward w ON w.ward=i.ward LEFT JOIN doctor d ON d.code=i.admdoctor LEFT JOIN pttype pt ON pt.pttype=i.pttype WHERE i.an=? LIMIT 1`,[ref]);
   if(!base.length)throw Object.assign(new Error('ไม่พบ AN'),{status:404}); const r=base[0];r.admit={regdate:r.regdate,dchdate:r.dchdate,los:r.los};delete r.regdate;delete r.dchdate;delete r.los;Object.assign(r,{chief_complaint:'ดูรายละเอียดจากเอกสาร IPD',present_illness:'',vitals:{},labs:[],timeline:[]});
-  r.diagnoses=await hosQuery("SELECT id.icd10 code,COALESCE(ic.name,'') name,id.diagtype type FROM iptdiag id LEFT JOIN icd101 ic ON ic.code=id.icd10 WHERE id.an=?",[ref]); r.medications=await hosQuery("SELECT COALESCE(di.name,oi.icode) name,oi.qty,oi.unitprice FROM opitemrece oi LEFT JOIN drugitems di ON di.icode=oi.icode WHERE oi.an=? LIMIT 150",[ref]);return r;
+  r.diagnoses=await hosQuery("SELECT id.icd10 code,COALESCE(ic.name,'') name,id.diagtype type FROM iptdiag id LEFT JOIN icd101 ic ON ic.code=id.icd10 WHERE id.an=?",[ref]); r.medications=await loadMedications('IPD',ref);return r;
 }
 
 function staticFile(req,res,path) {

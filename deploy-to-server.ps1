@@ -90,7 +90,10 @@ try {
     Write-Host 'Installing on server. Enter the SSH password again when prompted.' -ForegroundColor Yellow
     $remoteCommand = @'
 set -e
-mkdir -p /opt/qrm /opt/qrm/data/uploads /opt/qrm/logs
+echo 'Preparing /opt/qrm (sudo permission may be requested)...'
+sudo -v
+sudo mkdir -p /opt/qrm /opt/qrm/data/uploads /opt/qrm/logs
+sudo chown -R "$(id -un):$(id -gn)" /opt/qrm
 tar -xzf /tmp/qmr-kss-deploy.tar.gz -C /opt/qrm
 rm -f /tmp/qmr-kss-deploy.tar.gz
 cd /opt/qrm
@@ -128,7 +131,7 @@ pm2 save
 pm2 status qmr-kss
 '@
     $remoteCommand = $remoteCommand.Replace('__QMR_RELEASE__', $release)
-    & ssh.exe $Server $remoteCommand
+    & ssh.exe -tt $Server $remoteCommand
     if ($LASTEXITCODE -eq 23) {
         Write-Host 'Code deployed. Configure /opt/qrm/.env on the server, then start PM2.' -ForegroundColor Yellow
     }

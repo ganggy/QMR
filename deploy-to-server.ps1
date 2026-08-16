@@ -1,7 +1,11 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Server,
-    [string]$RemoteRoot = '/opt/qrm'
+    [string]$RemoteRoot = '/opt/qrm',
+    [switch]$Configure,
+    [string]$HosxpHost = '192.168.2.254',
+    [string]$HosxpDatabase = 'hos',
+    [string]$HosxpUser = 'opd'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -9,6 +13,7 @@ $projectPath = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location -LiteralPath $projectPath
 
 $archive = Join-Path $env:TEMP 'qmr-kss-deploy.tar.gz'
+$temporaryEnv = $null
 $serverHost = ($Server -split '@')[-1]
 $release = (& git rev-parse HEAD).Trim()
 if (-not $release) { throw 'Cannot determine the Git release SHA.' }
@@ -32,9 +37,55 @@ Write-Host 'Building deployment archive...' -ForegroundColor Cyan
 if ($LASTEXITCODE -ne 0) { throw 'Could not build deployment archive.' }
 
 try {
+    if ($Configure) {
+        function Read-PlainSecret([string]$Prompt) {
+            $secureValue = Read-Host $Prompt -AsSecureString
+            $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureValue)
+            try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
+            finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+        }
+        function ConvertTo-EnvValue([string]$Value) {
+            if ($Value.Contains("`r") -or $Value.Contains("`n")) { throw 'Environment values cannot contain a new line.' }
+            return '"' + $Value.Replace('\', '\\').Replace('"', '\"') + '"'
+        }
+
+        $hosxpPassword = Read-PlainSecret 'HOSxP database password'
+        $adminPassword = Read-PlainSecret 'Set QMR web administrator password (minimum 12 characters)'
+        $adminConfirm = Read-PlainSecret 'Confirm QMR web administrator password'
+        if ($adminPassword.Length -lt 12) { throw 'QMR administrator password must contain at least 12 characters.' }
+        if ($adminPassword -cne $adminConfirm) { throw 'QMR administrator passwords do not match.' }
+
+        $secretBytes = New-Object byte[] 48
+        $randomGenerator = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $randomGenerator.GetBytes($secretBytes) }
+        finally { $randomGenerator.Dispose() }
+        $qmrSecret = [Convert]::ToBase64String($secretBytes)
+
+        $temporaryEnv = [IO.Path]::GetTempFileName()
+        $utf8NoBom = New-Object Text.UTF8Encoding($false)
+        $envLines = @(
+            "HOSXP_HOST=$(ConvertTo-EnvValue $HosxpHost)",
+            'HOSXP_PORT=3306',
+            "HOSXP_DATABASE=$(ConvertTo-EnvValue $HosxpDatabase)",
+            "HOSXP_USER=$(ConvertTo-EnvValue $HosxpUser)",
+            "HOSXP_PASSWORD=$(ConvertTo-EnvValue $hosxpPassword)",
+            'QMR_ADMIN_USER=admin',
+            "QMR_ADMIN_PASSWORD=$(ConvertTo-EnvValue $adminPassword)",
+            "QMR_SECRET_KEY=$(ConvertTo-EnvValue $qmrSecret)",
+            'QMR_ALLOW_REGISTRATION=1',
+            'QMR_SECURE_COOKIE=0'
+        )
+        [IO.File]::WriteAllLines($temporaryEnv, $envLines, $utf8NoBom)
+    }
+
     Write-Host 'Uploading package. Enter the SSH password when prompted.' -ForegroundColor Yellow
     & scp.exe $archive "${Server}:/tmp/qmr-kss-deploy.tar.gz"
     if ($LASTEXITCODE -ne 0) { throw 'Upload failed.' }
+    if ($Configure) {
+        Write-Host 'Uploading production configuration. Enter the SSH password when prompted.' -ForegroundColor Yellow
+        & scp.exe $temporaryEnv "${Server}:/tmp/qmr-kss.env"
+        if ($LASTEXITCODE -ne 0) { throw 'Configuration upload failed.' }
+    }
 
     Write-Host 'Installing on server. Enter the SSH password again when prompted.' -ForegroundColor Yellow
     $remoteCommand = @'
@@ -49,6 +100,10 @@ if [ "$node_major" -lt 22 ]; then
   exit 22
 fi
 npm ci --omit=dev
+if [ -f /tmp/qmr-kss.env ]; then
+  mv /tmp/qmr-kss.env /opt/qrm/.env
+  chmod 600 /opt/qrm/.env
+fi
 if [ ! -f .env ]; then
   cp .env.production.example .env
   chmod 600 .env
@@ -89,4 +144,5 @@ pm2 status qmr-kss
 }
 finally {
     if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+    if ($temporaryEnv -and (Test-Path -LiteralPath $temporaryEnv)) { Remove-Item -LiteralPath $temporaryEnv -Force }
 }

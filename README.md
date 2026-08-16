@@ -48,6 +48,12 @@ cd D:\QMR
 .\deploy-to-server.ps1 -Server 'user@server-ip'
 ```
 
+สำหรับติดตั้งครั้งแรกหรือแทนระบบเดิม ให้เพิ่ม `-Configure` สคริปต์จะถามรหัส HOSxP และรหัสผู้ดูแลเว็บแบบซ่อนข้อความ แล้วสร้าง `.env` บน server ให้:
+
+```powershell
+.\deploy-to-server.ps1 -Server 'user@server-ip' -Configure
+```
+
 สคริปต์จะถามรหัส SSH จากหน้าจอโดยตรงและจะไม่บันทึกรหัสไว้ในโปรเจกต์ การ deploy จะทับไฟล์โปรแกรม แต่รักษา `/opt/qrm/.env`, `/opt/qrm/data/` และ `/opt/qrm/logs/`
 
 ครั้งแรกให้แก้ `/opt/qrm/.env` บน server ตาม `.env.production.example` แล้วรัน:

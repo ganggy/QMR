@@ -135,10 +135,15 @@ async function hosQuery(sql,args=[]) {
   finally { await conn.end(); }
 }
 
-async function loadMedications(recordType, ref) {
+async function optionalHos(label, loader, fallback=[]) {
+  try{return await loader()}
+  catch(error){console.error(`[HOSxP optional:${label}] ${error.code||'ERROR'}: ${error.message}`);return fallback}
+}
+
+async function loadMedications(recordType, ref, fallbackDate='') {
   const key=recordType==='IPD'?'an':'vn';
   const limit=recordType==='IPD'?1000:200;
-  return hosQuery(`
+  try{return await hosQuery(`
     SELECT
       oi.icode,
       COALESCE(
@@ -152,7 +157,7 @@ async function loadMedications(recordType, ref) {
       oi.unitprice,
       oi.item_type,
       COALESCE(oi.rxdate,oi.vstdate) event_date,
-      oi.rxtime event_time
+      '' event_time
     FROM opitemrece oi
     LEFT JOIN s_drugitems sd ON sd.icode=oi.icode
     LEFT JOIN nondrugitems ndi ON ndi.icode=oi.icode
@@ -161,12 +166,23 @@ async function loadMedications(recordType, ref) {
     WHERE oi.${key}=?
     ORDER BY oi.item_no,oi.icode
     LIMIT ${limit}
-  `,[ref]);
+  `,[ref])}
+  catch(error){
+    console.error(`[HOSxP medication-date fallback] ${error.code||'ERROR'}: ${error.message}`);
+    try{
+      const rows=await hosQuery(`SELECT oi.icode,COALESCE(NULLIF(TRIM(sd.name),''),NULLIF(TRIM(ndi.name),''),NULLIF(TRIM(di.name),''),oi.icode) name,COALESCE(NULLIF(TRIM(du.name1),''),NULLIF(TRIM(oi.drugusage),''),'-') usage,oi.qty,oi.unitprice,oi.item_type FROM opitemrece oi LEFT JOIN s_drugitems sd ON sd.icode=oi.icode LEFT JOIN nondrugitems ndi ON ndi.icode=oi.icode LEFT JOIN drugitems di ON di.icode=oi.icode LEFT JOIN drugusage du ON du.code=oi.drugusage WHERE oi.${key}=? LIMIT ${limit}`,[ref]);
+      return rows.map(row=>({...row,event_date:fallbackDate,event_time:''}));
+    }catch(fallbackError){
+      console.error(`[HOSxP medication-name fallback] ${fallbackError.code||'ERROR'}: ${fallbackError.message}`);
+      const rows=await hosQuery(`SELECT oi.icode,COALESCE(di.name,oi.icode) name,oi.qty,oi.unitprice FROM opitemrece oi LEFT JOIN drugitems di ON di.icode=oi.icode WHERE oi.${key}=? LIMIT ${limit}`,[ref]);
+      return rows.map(row=>({...row,usage:'-',event_date:fallbackDate,event_time:''}));
+    }
+  }
 }
 
 async function loadLabs(vn, limit=500) {
   if(!vn)return [];
-  return hosQuery(`
+  return optionalHos('labs',()=>hosQuery(`
     SELECT
       lh.order_date date,
       lh.order_time event_time,
@@ -180,7 +196,7 @@ async function loadLabs(vn, limit=500) {
     WHERE lh.vn=?
     ORDER BY lh.order_date,lh.order_time,li.display_order
     LIMIT ${limit}
-  `,[vn]);
+  `,[vn]));
 }
 
 const DEMO_CASES=[
@@ -221,15 +237,16 @@ async function caseDetail(kind,ref){
     const base=await hosQuery(`SELECT 'OPD' type,o.vn ref_no,o.hn,CONCAT(p.pname,p.fname,' ',p.lname) patient_name,TIMESTAMPDIFF(YEAR,p.birthday,CURDATE()) age,p.sex,o.vstdate visit_date,COALESCE(k.department,'OPD') department,COALESCE(d.name,'-') doctor_name,COALESCE(pt.name,'-') rights,os.cc chief_complaint,os.hpi present_illness,os.temperature,os.pulse,os.rr respiration,CONCAT(os.bps,'/',os.bpd) bp,os.bw weight,os.height FROM ovst o JOIN patient p ON p.hn=o.hn LEFT JOIN opdscreen os ON os.vn=o.vn LEFT JOIN doctor d ON d.code=o.doctor LEFT JOIN pttype pt ON pt.pttype=o.pttype LEFT JOIN kskdepartment k ON k.depcode=o.main_dep WHERE o.vn=? LIMIT 1`,[ref]);
     if(!base.length)throw Object.assign(new Error('ไม่พบ VN'),{status:404}); const r=base[0]; r.vitals={temperature:r.temperature,pulse:r.pulse,respiration:r.respiration,bp:r.bp,weight:r.weight,height:r.height}; for(const k of Object.keys(r.vitals))delete r[k];
     r.diagnoses=await hosQuery("SELECT od.icd10 code,COALESCE(ic.name,'') name,od.diagtype type FROM ovstdiag od LEFT JOIN icd101 ic ON ic.code=od.icd10 WHERE od.vn=?",[ref]);
-    r.medications=await loadMedications('OPD',ref);
+    r.medications=await loadMedications('OPD',ref,r.visit_date);
     r.labs=await loadLabs(ref,200); r.timeline=[]; return r;
   }
-  const base=await hosQuery(`SELECT 'IPD' type,i.an ref_no,i.hn,i.vn admit_vn,CONCAT(p.pname,p.fname,' ',p.lname) patient_name,TIMESTAMPDIFF(YEAR,p.birthday,CURDATE()) age,p.sex,i.regdate visit_date,COALESCE(w.name,'IPD') department,COALESCE(d.name,'-') doctor_name,COALESCE(pt.name,'-') rights,i.regdate,i.dchdate,DATEDIFF(COALESCE(i.dchdate,CURDATE()),i.regdate) los FROM ipt i JOIN patient p ON p.hn=i.hn LEFT JOIN ward w ON w.ward=i.ward LEFT JOIN doctor d ON d.code=i.admdoctor LEFT JOIN pttype pt ON pt.pttype=i.pttype WHERE i.an=? LIMIT 1`,[ref]);
-  if(!base.length)throw Object.assign(new Error('ไม่พบ AN'),{status:404}); const r=base[0],admitVn=r.admit_vn;r.admit={regdate:r.regdate,dchdate:r.dchdate,los:r.los};delete r.regdate;delete r.dchdate;delete r.los;delete r.admit_vn;Object.assign(r,{chief_complaint:'ดูรายละเอียดจากเอกสาร IPD',present_illness:'',vitals:{},labs:[],timeline:[]});
+  const base=await hosQuery(`SELECT 'IPD' type,i.an ref_no,i.hn,CONCAT(p.pname,p.fname,' ',p.lname) patient_name,TIMESTAMPDIFF(YEAR,p.birthday,CURDATE()) age,p.sex,i.regdate visit_date,COALESCE(w.name,'IPD') department,COALESCE(d.name,'-') doctor_name,COALESCE(pt.name,'-') rights,i.regdate,i.dchdate,DATEDIFF(COALESCE(i.dchdate,CURDATE()),i.regdate) los FROM ipt i JOIN patient p ON p.hn=i.hn LEFT JOIN ward w ON w.ward=i.ward LEFT JOIN doctor d ON d.code=i.admdoctor LEFT JOIN pttype pt ON pt.pttype=i.pttype WHERE i.an=? LIMIT 1`,[ref]);
+  if(!base.length)throw Object.assign(new Error('ไม่พบ AN'),{status:404}); const r=base[0];r.admit={regdate:r.regdate,dchdate:r.dchdate,los:r.los};delete r.regdate;delete r.dchdate;delete r.los;Object.assign(r,{chief_complaint:'ดูรายละเอียดจากเอกสาร IPD',present_illness:'',vitals:{},labs:[],timeline:[]});
+  const admitVn=(await optionalHos('ipt-vn',()=>hosQuery('SELECT vn FROM ipt WHERE an=? LIMIT 1',[ref])))[0]?.vn||'';
   r.diagnoses=await hosQuery("SELECT id.icd10 code,COALESCE(ic.name,'') name,id.diagtype type FROM iptdiag id LEFT JOIN icd101 ic ON ic.code=id.icd10 WHERE id.an=?",[ref]);
-  r.medications=await loadMedications('IPD',ref);
+  r.medications=await loadMedications('IPD',ref,r.admit.regdate);
   r.labs=await loadLabs(admitVn);
-  r.timeline=await hosQuery(`SELECT bm.movedate event_date,bm.movetime event_time,'ย้ายเตียง/หอผู้ป่วย' title,CONCAT(COALESCE(ow.name,bm.oward,'-'),' เตียง ',COALESCE(bm.obedno,'-'),' → ',COALESCE(nw.name,bm.nward,'-'),' เตียง ',COALESCE(bm.nbedno,'-'),CASE WHEN COALESCE(bm.movereason,'')='' THEN '' ELSE CONCAT(' • ',bm.movereason) END) detail FROM iptbedmove bm LEFT JOIN ward ow ON ow.ward=bm.oward LEFT JOIN ward nw ON nw.ward=bm.nward WHERE bm.an=? ORDER BY bm.movedate,bm.movetime`,[ref]);
+  r.timeline=await optionalHos('bed-moves',()=>hosQuery(`SELECT bm.movedate event_date,bm.movetime event_time,'ย้ายเตียง/หอผู้ป่วย' title,CONCAT(COALESCE(ow.name,bm.oward,'-'),' เตียง ',COALESCE(bm.obedno,'-'),' → ',COALESCE(nw.name,bm.nward,'-'),' เตียง ',COALESCE(bm.nbedno,'-'),CASE WHEN COALESCE(bm.movereason,'')='' THEN '' ELSE CONCAT(' • ',bm.movereason) END) detail FROM iptbedmove bm LEFT JOIN ward ow ON ow.ward=bm.oward LEFT JOIN ward nw ON nw.ward=bm.nward WHERE bm.an=? ORDER BY bm.movedate,bm.movetime`,[ref]));
   r.timeline.unshift({event_date:r.admit.regdate,event_time:'',title:'รับผู้ป่วยเข้า Admit',detail:r.department});
   if(r.admit.dchdate)r.timeline.push({event_date:r.admit.dchdate,event_time:'',title:'จำหน่ายผู้ป่วย',detail:`ระยะเวลานอน ${r.admit.los} วัน`});
   return r;

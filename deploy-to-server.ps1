@@ -55,6 +55,16 @@ if [ ! -f .env ]; then
   exit 23
 fi
 chmod 600 .env
+old_apps=$(pm2 jlist | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{for(const p of JSON.parse(d||'[]')){if(p.name!=='qmr-kss'&&p.pm2_env&&p.pm2_env.pm_cwd==='/opt/qrm')console.log(p.name)}})")
+for old_app in $old_apps; do
+  echo "Replacing old PM2 app in /opt/qrm: $old_app"
+  pm2 delete "$old_app"
+done
+if command -v ss >/dev/null 2>&1 && ss -ltn | grep -q ':3509 '; then
+  echo 'ERROR: TCP port 3509 is still used by a process outside /opt/qrm.'
+  ss -ltnp | grep ':3509 ' || true
+  exit 24
+fi
 pm2 startOrReload ecosystem.config.cjs --update-env
 pm2 save
 pm2 status qmr-kss

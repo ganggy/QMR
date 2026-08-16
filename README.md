@@ -39,7 +39,7 @@
 
 ## Deploy ไปยัง Server ด้วย PM2
 
-กำหนด SSH target ตอนเรียกสคริปต์ ส่วนโฟลเดอร์ปลายทางเริ่มต้นคือ `/opt/qrm` และพอร์ตแอปคือ `3509`
+กำหนด SSH target ตอนเรียกสคริปต์ ส่วนโฟลเดอร์ปลายทางคือ `/opt/qmr` และพอร์ตแอปคือ `3509`
 
 จาก Windows ให้รัน:
 
@@ -54,12 +54,12 @@ cd D:\QMR
 .\deploy-to-server.ps1 -Server 'user@server-ip' -Configure
 ```
 
-สคริปต์จะถามรหัส SSH จากหน้าจอโดยตรงและจะไม่บันทึกรหัสไว้ในโปรเจกต์ การ deploy จะทับไฟล์โปรแกรม แต่รักษา `/opt/qrm/.env`, `/opt/qrm/data/` และ `/opt/qrm/logs/`
+สคริปต์จะถามรหัส SSH จากหน้าจอโดยตรงและจะไม่บันทึกรหัสไว้ในโปรเจกต์ การ deploy จะหยุด process ที่รันจาก `/opt/qrm`, ลบ `/opt/qrm` เดิมทั้งหมด และติดตั้งใหม่ที่ `/opt/qmr`
 
-ครั้งแรกให้แก้ `/opt/qrm/.env` บน server ตาม `.env.production.example` แล้วรัน:
+ครั้งแรกให้แก้ `/opt/qmr/.env` บน server ตาม `.env.production.example` แล้วรัน:
 
 ```bash
-cd /opt/qrm
+cd /opt/qmr
 chmod 600 .env
 pm2 start ecosystem.config.cjs
 pm2 save
@@ -69,8 +69,8 @@ pm2 save
 
 - Node.js 22 ขึ้นไป
 - PM2 ทำงานแบบ fork จำนวน 1 instance เท่านั้น เนื่องจากใช้ SQLite
-- ฐาน QMR อยู่ที่ `/opt/qrm/data/qmr.db` และไฟล์แนบอยู่ที่ `/opt/qrm/data/uploads`
-- สำรอง `/opt/qrm/data/` และ `/opt/qrm/.env` เป็นประจำ
+- ฐาน QMR อยู่ที่ `/opt/qmr/data/qmr.db` และไฟล์แนบอยู่ที่ `/opt/qmr/data/uploads`
+- สำรอง `/opt/qmr/data/` และ `/opt/qmr/.env` เป็นประจำ
 - อนุญาต TCP 3509 เฉพาะ LAN/VPN หรือใช้งานผ่าน HTTPS reverse proxy
 - หากใช้ HTTPS ให้เปลี่ยน `QMR_SECURE_COOKIE=1`
 

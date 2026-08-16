@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)]
     [string]$Server,
-    [string]$RemoteRoot = '/opt/qrm',
+    [string]$RemoteRoot = '/opt/qmr',
     [switch]$Configure,
     [string]$HosxpHost = '192.168.2.254',
     [string]$HosxpDatabase = 'hos',
@@ -90,13 +90,36 @@ try {
     Write-Host 'Installing on server. Enter the SSH password again when prompted.' -ForegroundColor Yellow
     $remoteCommand = @'
 set -e
-echo 'Preparing /opt/qrm (sudo permission may be requested)...'
+OLD_ROOT='/opt/qrm'
+NEW_ROOT='/opt/qmr'
+if [ "$OLD_ROOT" != '/opt/qrm' ] || [ "$NEW_ROOT" != '/opt/qmr' ]; then
+  echo 'ERROR: Deployment path safety check failed.'
+  exit 25
+fi
+echo 'Removing retired /opt/qrm and preparing /opt/qmr (sudo permission may be requested)...'
 sudo -v
-sudo mkdir -p /opt/qrm /opt/qrm/data/uploads /opt/qrm/logs
-sudo chown -R "$(id -un):$(id -gn)" /opt/qrm
-tar -xzf /tmp/qmr-kss-deploy.tar.gz -C /opt/qrm
+old_apps=$(pm2 jlist | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{for(const p of JSON.parse(d||'[]')){const e=p.pm2_env||{};if((e.pm_cwd||'').startsWith('/opt/qrm')||(e.pm_exec_path||'').startsWith('/opt/qrm'))console.log(p.name)}})")
+for old_app in $old_apps; do
+  echo "Stopping retired PM2 app: $old_app"
+  pm2 delete "$old_app"
+done
+for cwd_link in /proc/[0-9]*/cwd; do
+  process_cwd=$(readlink "$cwd_link" 2>/dev/null || true)
+  case "$process_cwd" in
+    /opt/qrm|/opt/qrm/*)
+      process_pid=$(echo "$cwd_link" | cut -d/ -f3)
+      echo "Stopping retired process PID $process_pid from $process_cwd"
+      sudo kill "$process_pid" 2>/dev/null || true
+      ;;
+  esac
+done
+sleep 1
+sudo rm -rf -- "$OLD_ROOT"
+sudo mkdir -p "$NEW_ROOT/data/uploads" "$NEW_ROOT/logs"
+sudo chown -R "$(id -un):$(id -gn)" "$NEW_ROOT"
+tar -xzf /tmp/qmr-kss-deploy.tar.gz -C "$NEW_ROOT"
 rm -f /tmp/qmr-kss-deploy.tar.gz
-cd /opt/qrm
+cd "$NEW_ROOT"
 node_major=$(node -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || echo 0)
 if [ "$node_major" -lt 22 ]; then
   echo "ERROR: Node.js 22 or newer is required. Current: $(node --version 2>/dev/null || echo missing)"
@@ -104,25 +127,20 @@ if [ "$node_major" -lt 22 ]; then
 fi
 npm ci --omit=dev
 if [ -f /tmp/qmr-kss.env ]; then
-  mv /tmp/qmr-kss.env /opt/qrm/.env
-  chmod 600 /opt/qrm/.env
+  mv /tmp/qmr-kss.env "$NEW_ROOT/.env"
+  chmod 600 "$NEW_ROOT/.env"
 fi
 if [ ! -f .env ]; then
   cp .env.production.example .env
   chmod 600 .env
   echo "FIRST_SETUP_REQUIRED"
-  echo "Edit /opt/qrm/.env, then run: cd /opt/qrm && pm2 start ecosystem.config.cjs && pm2 save"
+  echo "Edit /opt/qmr/.env, then run: cd /opt/qmr && pm2 start ecosystem.config.cjs && pm2 save"
   exit 23
 fi
 chmod 600 .env
-printf '%s\n' '__QMR_RELEASE__' > /opt/qrm/.release
-old_apps=$(pm2 jlist | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{for(const p of JSON.parse(d||'[]')){if(p.name!=='qmr-kss'&&p.pm2_env&&p.pm2_env.pm_cwd==='/opt/qrm')console.log(p.name)}})")
-for old_app in $old_apps; do
-  echo "Replacing old PM2 app in /opt/qrm: $old_app"
-  pm2 delete "$old_app"
-done
+printf '%s\n' '__QMR_RELEASE__' > "$NEW_ROOT/.release"
 if command -v ss >/dev/null 2>&1 && ss -ltn | grep -q ':3509 '; then
-  echo 'ERROR: TCP port 3509 is still used by a process outside /opt/qrm.'
+  echo 'ERROR: TCP port 3509 is still used after removing /opt/qrm processes.'
   ss -ltnp | grep ':3509 ' || true
   exit 24
 fi
@@ -133,7 +151,7 @@ pm2 status qmr-kss
     $remoteCommand = $remoteCommand.Replace('__QMR_RELEASE__', $release)
     & ssh.exe -tt $Server $remoteCommand
     if ($LASTEXITCODE -eq 23) {
-        Write-Host 'Code deployed. Configure /opt/qrm/.env on the server, then start PM2.' -ForegroundColor Yellow
+        Write-Host 'Code deployed. Configure /opt/qmr/.env on the server, then start PM2.' -ForegroundColor Yellow
     }
     elseif ($LASTEXITCODE -ne 0) { throw "Remote deployment failed with exit code $LASTEXITCODE." }
     else {

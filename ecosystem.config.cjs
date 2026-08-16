@@ -3,7 +3,7 @@ module.exports = {
     name: 'qmr-kss',
     cwd: '/opt/qmr',
     script: 'server.mjs',
-    interpreter: 'node',
+    interpreter: '/opt/qmr/runtime/node/bin/node',
     instances: 1,
     exec_mode: 'fork',
     autorestart: true,

@@ -141,17 +141,26 @@ async function optionalHos(label, loader, fallback=[]) {
 }
 
 const ITEM_CATALOGS=[
-  {table:'s_drugitems',kind:'drug'},
   {table:'drugitems',kind:'drug'},
+  {table:'nondrugitems',kind:'nondrug'},
   {table:'s_nondrugitems',kind:'nondrug'},
   {table:'s_nondrugiteems',kind:'nondrug'},
-  {table:'nondrugitems',kind:'nondrug'}
+  {table:'s_drugitems',kind:'combined'}
 ];
 const ITEM_NAME_COLUMNS=['name','name1','items_name','drug_name','nondrug_name','display_name'];
+const utf8Decoder=new TextDecoder('utf-8',{fatal:true});
+const thaiDecoder=new TextDecoder('windows-874');
+
+function hosText(value) {
+  if(value===null||value===undefined)return '';
+  if(!Buffer.isBuffer(value))return String(value).trim();
+  try{return utf8Decoder.decode(value).trim()}
+  catch{return thaiDecoder.decode(value).trim()}
+}
 
 async function loadItemCatalogs(icodes) {
-  const unique=[...new Set(icodes.map(String).filter(Boolean))];
-  const result={drug:new Map(),nondrug:new Map()};
+  const unique=[...new Set(icodes.map(code=>String(code||'').trim()).filter(Boolean))];
+  const result={drug:new Map(),nondrug:new Map(),combined:new Map()};
   if(!unique.length)return result;
   const schema=await optionalHos('item-catalog-schema',()=>hosQuery(`SELECT LOWER(TABLE_NAME) table_name,LOWER(COLUMN_NAME) column_name FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND LOWER(TABLE_NAME) IN (${ITEM_CATALOGS.map(()=>'?').join(',')})`,ITEM_CATALOGS.map(x=>x.table)));
   const available=new Map();
@@ -161,10 +170,22 @@ async function loadItemCatalogs(icodes) {
     const columns=available.get(catalog.table);
     const nameColumn=ITEM_NAME_COLUMNS.find(column=>columns?.has(column))||(schema.length?'':'name');
     if(!nameColumn)continue;
-    const rows=await optionalHos(`item-catalog-${catalog.table}`,()=>hosQuery(`SELECT icode,\`${nameColumn}\` item_name FROM \`${catalog.table}\` WHERE icode IN (${placeholders})`,unique));
-    for(const row of rows){const code=String(row.icode||''),name=String(row.item_name||'').trim();if(code&&name&&!result[catalog.kind].has(code))result[catalog.kind].set(code,name)}
+    const rows=await optionalHos(`item-catalog-${catalog.table}`,()=>hosQuery(`SELECT icode,CAST(\`${nameColumn}\` AS BINARY) item_name FROM \`${catalog.table}\` WHERE icode IN (${placeholders})`,unique));
+    for(const row of rows){const code=String(row.icode||'').trim(),name=hosText(row.item_name);if(code&&name&&!result[catalog.kind].has(code))result[catalog.kind].set(code,name)}
   }
   return result;
+}
+
+async function loadIncomeCatalog(codes) {
+  const unique=[...new Set(codes.map(code=>String(code||'').trim()).filter(Boolean))];
+  if(!unique.length)return new Map();
+  const schema=await optionalHos('income-schema',()=>hosQuery("SELECT LOWER(COLUMN_NAME) column_name FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND LOWER(TABLE_NAME)='income'"));
+  const columns=new Set(schema.map(row=>row.column_name));
+  const codeColumn=['income','income_id','code'].find(column=>columns.has(column));
+  const nameColumn=['name','income_name','name1','display_name'].find(column=>columns.has(column));
+  if(!codeColumn||!nameColumn)return new Map();
+  const rows=await optionalHos('income-catalog',()=>hosQuery(`SELECT \`${codeColumn}\` income_code,CAST(\`${nameColumn}\` AS BINARY) income_name FROM income WHERE \`${codeColumn}\` IN (${unique.map(()=>'?').join(',')})`,unique));
+  return new Map(rows.map(row=>[String(row.income_code||'').trim(),hosText(row.income_name)]).filter(([,name])=>name));
 }
 
 async function loadUsageCatalog(codes) {
@@ -196,12 +217,14 @@ async function loadMedications(recordType, ref, fallbackDate='') {
   }
   const catalogs=await loadItemCatalogs(rows.map(row=>row.icode));
   const usages=await loadUsageCatalog(rows.map(row=>row.drugusage));
+  const incomes=await loadIncomeCatalog(rows.map(row=>row.income));
   return rows.map(row=>{
-    const code=String(row.icode||'');
-    const drug=catalogs.drug.get(code),nondrug=catalogs.nondrug.get(code);
-    const name=String(row.item_type)==='1'?(drug||nondrug||code):(nondrug||drug||code);
+    const code=String(row.icode||'').trim();
+    const drug=catalogs.drug.get(code),nondrug=catalogs.nondrug.get(code),combined=catalogs.combined.get(code);
+    const name=drug||nondrug||combined||code;
+    const catalogKind=drug?'drug':nondrug?'nondrug':combined?'combined':'unknown';
     const usageCode=String(row.drugusage||'').trim();
-    return {...row,name,usage:usages.get(usageCode)||(usageCode?`ไม่พบคำอธิบายวิธีใช้ (รหัส ${usageCode})`:'-'),event_date:row.event_date||fallbackDate,event_time:row.event_time||''};
+    return {...row,name,catalog_kind:catalogKind,income_name:incomes.get(String(row.income||'').trim())||'',usage:usages.get(usageCode)||(usageCode?`ไม่พบคำอธิบายวิธีใช้ (รหัส ${usageCode})`:'-'),event_date:row.event_date||fallbackDate,event_time:row.event_time||''};
   });
 }
 
@@ -214,16 +237,16 @@ async function loadLabs(vn, limit=500, an='') {
       lo.lab_items_code,
       lh.order_date date,
       lh.order_time event_time,
-      li.lab_items_name name,
-      COALESCE(NULLIF(TRIM(lo.lab_order_result), ''), 'รอผล') result,
-      li.lab_items_normal_value normal_value,
+      CAST(li.lab_items_name AS BINARY) name,
+      CAST(lo.lab_order_result AS BINARY) result,
+      CAST(li.lab_items_normal_value AS BINARY) normal_value,
       lo.abnormal_result
     FROM lab_head lh
     JOIN lab_order lo ON lo.lab_order_number=lh.lab_order_number
     JOIN lab_items li ON li.lab_items_code=lo.lab_items_code`;
   const byVn=await optionalHos('labs-by-vn',()=>hosQuery(`${select} WHERE lh.vn IN (${visitKeys.map(()=>'?').join(',')}) ORDER BY lh.order_date,lh.order_time,li.display_order LIMIT ${limit}`,visitKeys));
   const byAn=an?await optionalHos('labs-by-an',()=>hosQuery(`${select} WHERE lh.an=? ORDER BY lh.order_date,lh.order_time,li.display_order LIMIT ${limit}`,[an])):[];
-  return [...new Map([...byVn,...byAn].map(row=>[`${row.lab_order_number}:${row.lab_items_code}`,row])).values()];
+  return [...new Map([...byVn,...byAn].map(row=>[`${row.lab_order_number}:${row.lab_items_code}`,row])).values()].map(row=>({...row,name:hosText(row.name),result:hosText(row.result)||'รอผล',normal_value:hosText(row.normal_value)}));
 }
 
 const DEMO_CASES=[

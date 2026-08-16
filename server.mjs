@@ -168,10 +168,19 @@ async function loadItemCatalogs(icodes) {
 }
 
 async function loadUsageCatalog(codes) {
-  const unique=[...new Set(codes.map(String).filter(Boolean))];
+  const unique=[...new Set(codes.map(code=>String(code||'').trim()).filter(Boolean))];
   if(!unique.length)return new Map();
-  const rows=await optionalHos('drug-usage',()=>hosQuery(`SELECT code,name1 FROM drugusage WHERE code IN (${unique.map(()=>'?').join(',')})`,unique));
-  return new Map(rows.map(row=>[String(row.code),String(row.name1||'').trim()]).filter(x=>x[1]));
+  const rows=await optionalHos('drug-usage',()=>hosQuery(`SELECT * FROM drugusage WHERE code IN (${unique.map(()=>'?').join(',')})`,unique));
+  const result=new Map();
+  for(const row of rows){
+    const fields=Object.fromEntries(Object.entries(row).map(([key,value])=>[key.toLowerCase(),String(value??'').trim()]));
+    const code=fields.code;
+    const lines=['name1','name2','name3','name4'].map(key=>fields[key]).filter(Boolean);
+    const alternate=['full_name','usage_name','description','shortlist','name','display_name'].map(key=>fields[key]).find(Boolean);
+    const text=(lines.join(' ')||alternate||'').replace(/\s+/g,' ').trim();
+    if(code&&text&&text!==code)result.set(code,text);
+  }
+  return result;
 }
 
 async function loadMedications(recordType, ref, fallbackDate='') {
@@ -191,7 +200,8 @@ async function loadMedications(recordType, ref, fallbackDate='') {
     const code=String(row.icode||'');
     const drug=catalogs.drug.get(code),nondrug=catalogs.nondrug.get(code);
     const name=String(row.item_type)==='1'?(drug||nondrug||code):(nondrug||drug||code);
-    return {...row,name,usage:usages.get(String(row.drugusage||''))||row.drugusage||'-',event_date:row.event_date||fallbackDate,event_time:row.event_time||''};
+    const usageCode=String(row.drugusage||'').trim();
+    return {...row,name,usage:usages.get(usageCode)||(usageCode?`ไม่พบคำอธิบายวิธีใช้ (รหัส ${usageCode})`:'-'),event_date:row.event_date||fallbackDate,event_time:row.event_time||''};
   });
 }
 

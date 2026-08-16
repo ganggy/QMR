@@ -140,44 +140,59 @@ async function optionalHos(label, loader, fallback=[]) {
   catch(error){console.error(`[HOSxP optional:${label}] ${error.code||'ERROR'}: ${error.message}`);return fallback}
 }
 
+const ITEM_CATALOGS=[
+  {table:'s_drugitems',kind:'drug'},
+  {table:'drugitems',kind:'drug'},
+  {table:'s_nondrugitems',kind:'nondrug'},
+  {table:'s_nondrugiteems',kind:'nondrug'},
+  {table:'nondrugitems',kind:'nondrug'}
+];
+const ITEM_NAME_COLUMNS=['name','name1','items_name','drug_name','nondrug_name','display_name'];
+
+async function loadItemCatalogs(icodes) {
+  const unique=[...new Set(icodes.map(String).filter(Boolean))];
+  const result={drug:new Map(),nondrug:new Map()};
+  if(!unique.length)return result;
+  const schema=await optionalHos('item-catalog-schema',()=>hosQuery(`SELECT LOWER(TABLE_NAME) table_name,LOWER(COLUMN_NAME) column_name FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND LOWER(TABLE_NAME) IN (${ITEM_CATALOGS.map(()=>'?').join(',')})`,ITEM_CATALOGS.map(x=>x.table)));
+  const available=new Map();
+  for(const row of schema){if(!available.has(row.table_name))available.set(row.table_name,new Set());available.get(row.table_name).add(row.column_name)}
+  const placeholders=unique.map(()=>'?').join(',');
+  for(const catalog of ITEM_CATALOGS){
+    const columns=available.get(catalog.table);
+    const nameColumn=ITEM_NAME_COLUMNS.find(column=>columns?.has(column))||(schema.length?'':'name');
+    if(!nameColumn)continue;
+    const rows=await optionalHos(`item-catalog-${catalog.table}`,()=>hosQuery(`SELECT icode,\`${nameColumn}\` item_name FROM \`${catalog.table}\` WHERE icode IN (${placeholders})`,unique));
+    for(const row of rows){const code=String(row.icode||''),name=String(row.item_name||'').trim();if(code&&name&&!result[catalog.kind].has(code))result[catalog.kind].set(code,name)}
+  }
+  return result;
+}
+
+async function loadUsageCatalog(codes) {
+  const unique=[...new Set(codes.map(String).filter(Boolean))];
+  if(!unique.length)return new Map();
+  const rows=await optionalHos('drug-usage',()=>hosQuery(`SELECT code,name1 FROM drugusage WHERE code IN (${unique.map(()=>'?').join(',')})`,unique));
+  return new Map(rows.map(row=>[String(row.code),String(row.name1||'').trim()]).filter(x=>x[1]));
+}
+
 async function loadMedications(recordType, ref, fallbackDate='') {
   const key=recordType==='IPD'?'an':'vn';
   const limit=recordType==='IPD'?1000:200;
-  try{return await hosQuery(`
-    SELECT
-      oi.icode,
-      COALESCE(
-        NULLIF(TRIM(sd.name), ''),
-        NULLIF(TRIM(ndi.name), ''),
-        NULLIF(TRIM(di.name), ''),
-        oi.icode
-      ) name,
-      COALESCE(NULLIF(TRIM(du.name1), ''), NULLIF(TRIM(oi.drugusage), ''), '-') usage,
-      oi.qty,
-      oi.unitprice,
-      oi.item_type,
-      COALESCE(oi.rxdate,oi.vstdate) event_date,
-      '' event_time
-    FROM opitemrece oi
-    LEFT JOIN s_drugitems sd ON sd.icode=oi.icode
-    LEFT JOIN nondrugitems ndi ON ndi.icode=oi.icode
-    LEFT JOIN drugitems di ON di.icode=oi.icode
-    LEFT JOIN drugusage du ON du.code=oi.drugusage
-    WHERE oi.${key}=?
-    ORDER BY oi.item_no,oi.icode
-    LIMIT ${limit}
-  `,[ref])}
-  catch(error){
+  let rows;
+  try{
+    rows=await hosQuery(`SELECT oi.icode,oi.qty,oi.unitprice,oi.item_type,oi.drugusage,COALESCE(oi.rxdate,oi.vstdate) event_date,'' event_time FROM opitemrece oi WHERE oi.${key}=? ORDER BY oi.item_no,oi.icode LIMIT ${limit}`,[ref]);
+  }catch(error){
     console.error(`[HOSxP medication-date fallback] ${error.code||'ERROR'}: ${error.message}`);
-    try{
-      const rows=await hosQuery(`SELECT oi.icode,COALESCE(NULLIF(TRIM(sd.name),''),NULLIF(TRIM(ndi.name),''),NULLIF(TRIM(di.name),''),oi.icode) name,COALESCE(NULLIF(TRIM(du.name1),''),NULLIF(TRIM(oi.drugusage),''),'-') usage,oi.qty,oi.unitprice,oi.item_type FROM opitemrece oi LEFT JOIN s_drugitems sd ON sd.icode=oi.icode LEFT JOIN nondrugitems ndi ON ndi.icode=oi.icode LEFT JOIN drugitems di ON di.icode=oi.icode LEFT JOIN drugusage du ON du.code=oi.drugusage WHERE oi.${key}=? LIMIT ${limit}`,[ref]);
-      return rows.map(row=>({...row,event_date:fallbackDate,event_time:''}));
-    }catch(fallbackError){
-      console.error(`[HOSxP medication-name fallback] ${fallbackError.code||'ERROR'}: ${fallbackError.message}`);
-      const rows=await hosQuery(`SELECT oi.icode,COALESCE(di.name,oi.icode) name,oi.qty,oi.unitprice FROM opitemrece oi LEFT JOIN drugitems di ON di.icode=oi.icode WHERE oi.${key}=? LIMIT ${limit}`,[ref]);
-      return rows.map(row=>({...row,usage:'-',event_date:fallbackDate,event_time:''}));
-    }
+    try{rows=await hosQuery(`SELECT oi.icode,oi.qty,oi.unitprice,oi.item_type,oi.drugusage FROM opitemrece oi WHERE oi.${key}=? LIMIT ${limit}`,[ref])}
+    catch(fallbackError){console.error(`[HOSxP medication-core fallback] ${fallbackError.code||'ERROR'}: ${fallbackError.message}`);rows=await hosQuery(`SELECT oi.icode,oi.qty,oi.unitprice FROM opitemrece oi WHERE oi.${key}=? LIMIT ${limit}`,[ref])}
   }
+  const catalogs=await loadItemCatalogs(rows.map(row=>row.icode));
+  const usages=await loadUsageCatalog(rows.map(row=>row.drugusage));
+  return rows.map(row=>{
+    const code=String(row.icode||'');
+    const drug=catalogs.drug.get(code),nondrug=catalogs.nondrug.get(code);
+    const name=String(row.item_type)==='1'?(drug||nondrug||code):(nondrug||drug||code);
+    return {...row,name,usage:usages.get(String(row.drugusage||''))||row.drugusage||'-',event_date:row.event_date||fallbackDate,event_time:row.event_time||''};
+  });
 }
 
 async function loadLabs(vn, limit=500) {

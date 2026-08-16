@@ -24,8 +24,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Project check failed.' }
 if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
 
 Write-Host 'Building deployment archive...' -ForegroundColor Cyan
-& tar.exe -czf $archive `
+& tar.exe -czf $archive --format=ustar `
     --exclude='./node_modules' `
+    --exclude='./.git' `
     --exclude='./.venv' `
     --exclude='./__pycache__' `
     --exclude='./qmr.db*' `

@@ -128,9 +128,36 @@ if pm2 describe qmr-kss >/dev/null 2>&1; then
   pm2 stop qmr-kss
   sleep 1
 fi
-if command -v ss >/dev/null 2>&1 && ss -ltn | grep -q ':3509 '; then
-  echo 'ERROR: TCP port 3509 is still used by another process.' >&2
-  ss -ltnp | grep ':3509 ' || true
+
+port_3509_is_busy() {
+  ss -H -ltn 2>/dev/null | awk '{print $4}' | grep -Eq '(^|:)3509$'
+}
+
+stop_port_3509() {
+  local signal="$1"
+  if command -v fuser >/dev/null 2>&1; then
+    sudo fuser --kill "-$signal" 3509/tcp >/dev/null 2>&1 || true
+  elif command -v lsof >/dev/null 2>&1; then
+    sudo lsof -t -iTCP:3509 -sTCP:LISTEN 2>/dev/null | xargs -r sudo kill "-$signal" || true
+  else
+    echo 'ERROR: fuser or lsof is required to replace the existing service on port 3509.' >&2
+    exit 24
+  fi
+}
+
+if port_3509_is_busy; then
+  echo 'Stopping the retired service currently using TCP port 3509...'
+  stop_port_3509 TERM
+  sleep 2
+fi
+if port_3509_is_busy; then
+  echo 'The retired service did not stop; terminating it now...'
+  stop_port_3509 KILL
+  sleep 1
+fi
+if port_3509_is_busy; then
+  echo 'ERROR: TCP port 3509 is still used after termination attempts.' >&2
+  sudo ss -ltnp | grep ':3509 ' || true
   exit 24
 fi
 

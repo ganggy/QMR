@@ -1,6 +1,6 @@
 import http from 'node:http';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, statSync, readFileSync } from 'node:fs';
 import { extname, join, resolve, basename, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHmac, randomBytes, randomUUID, timingSafeEqual, scryptSync } from 'node:crypto';
@@ -22,6 +22,7 @@ const SECRET = process.env.QMR_SECRET_KEY || randomBytes(32).toString('hex');
 const MAX_UPLOAD = 10 * 1024 * 1024;
 const MIME_EXT = {'application/pdf':'.pdf','image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'};
 const registrationAttempts=new Map();
+const RELEASE=process.env.QMR_RELEASE||(()=>{try{return readFileSync(join(ROOT,'.release'),'utf8').trim()}catch{return 'development'}})();
 
 function hashPassword(password) {
   const salt=randomBytes(16).toString('hex');
@@ -227,6 +228,7 @@ const server=http.createServer(async(req,res)=>{
   secureHeaders(res);const url=new URL(req.url,`http://${req.headers.host||'localhost'}`),path=url.pathname;
   try{
     if((path==='/'||path.startsWith('/static/'))&&req.method==='GET'){if(staticFile(req,res,path))return;return fail(res,404,'ไม่พบไฟล์')}
+    if(path==='/api/version'&&req.method==='GET')return ok(res,{service:'qmr-kss',version:'1.0.0',release:RELEASE,runtime:process.version});
     if(path==='/api/session'&&req.method==='GET'){const u=userRecord(sessionUser(req));return ok(res,{authenticated:!!u?.active,user:u?.username||null,display_name:u?.display_name||null,role:u?.role||null,demo:DEMO})}
     if(path==='/api/login'&&req.method==='POST'){
       const b=await jsonBody(req),u=database.prepare('SELECT * FROM users WHERE username=?').get(String(b.username||'').trim());

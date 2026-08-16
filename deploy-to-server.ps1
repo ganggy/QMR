@@ -10,6 +10,8 @@ Set-Location -LiteralPath $projectPath
 
 $archive = Join-Path $env:TEMP 'qmr-kss-deploy.tar.gz'
 $serverHost = ($Server -split '@')[-1]
+$release = (& git rev-parse HEAD).Trim()
+if (-not $release) { throw 'Cannot determine the Git release SHA.' }
 
 Write-Host 'Checking project...' -ForegroundColor Cyan
 & npm.cmd run check
@@ -55,6 +57,7 @@ if [ ! -f .env ]; then
   exit 23
 fi
 chmod 600 .env
+printf '%s\n' '__QMR_RELEASE__' > /opt/qrm/.release
 old_apps=$(pm2 jlist | node -e "let d='';process.stdin.on('data',c=>d+=c).on('end',()=>{for(const p of JSON.parse(d||'[]')){if(p.name!=='qmr-kss'&&p.pm2_env&&p.pm2_env.pm_cwd==='/opt/qrm')console.log(p.name)}})")
 for old_app in $old_apps; do
   echo "Replacing old PM2 app in /opt/qrm: $old_app"
@@ -69,13 +72,19 @@ pm2 startOrReload ecosystem.config.cjs --update-env
 pm2 save
 pm2 status qmr-kss
 '@
+    $remoteCommand = $remoteCommand.Replace('__QMR_RELEASE__', $release)
     & ssh.exe $Server $remoteCommand
     if ($LASTEXITCODE -eq 23) {
         Write-Host 'Code deployed. Configure /opt/qrm/.env on the server, then start PM2.' -ForegroundColor Yellow
     }
     elseif ($LASTEXITCODE -ne 0) { throw "Remote deployment failed with exit code $LASTEXITCODE." }
     else {
-        Write-Host "Deployment complete: http://${serverHost}:3509" -ForegroundColor Green
+        $version = Invoke-RestMethod -Uri "http://${serverHost}:3509/api/version" -TimeoutSec 10
+        if ($version.service -ne 'qmr-kss' -or $version.release -ne $release) {
+            throw "Deployment verification failed. Expected $release but server reported $($version.release)."
+        }
+        Write-Host "Deployment verified: $($version.release)" -ForegroundColor Green
+        Write-Host "Application URL: http://${serverHost}:3509" -ForegroundColor Green
     }
 }
 finally {

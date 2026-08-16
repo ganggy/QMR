@@ -4,6 +4,7 @@ __pycache__/
 node_modules/
 .env
 .env.production
+.release
 qmr.db
 qmr.db-shm
 qmr.db-wal

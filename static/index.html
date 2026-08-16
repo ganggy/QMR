@@ -2,7 +2,7 @@
 <html lang="th">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>QMR KSS • ระบบประเมินคุณภาพเวชระเบียน</title>
+  <title>QMR KSP • ระบบประเมินคุณภาพเวชระเบียน</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
@@ -10,14 +10,14 @@
 <body>
   <div id="toast" class="toast"></div>
   <section id="login" class="login-shell">
-    <div class="login-art"><div class="art-grain"></div><div class="login-brand"><div class="brand-mark">Q</div><span>QMR KSS</span></div><div class="login-copy"><p class="eyebrow light">MEDICAL RECORD QUALITY</p><h1>คุณภาพที่มองเห็น<br>การดูแลที่ดีขึ้น</h1><p>ระบบทบทวนคุณภาพเวชระเบียน โรงพยาบาลโคกศรีสุพรรณ</p></div><div class="privacy-note">ระบบภายใน • ข้อมูลผู้ป่วยได้รับการคุ้มครอง</div></div>
-    <form id="loginForm" class="login-card"><div class="mobile-brand"><div class="brand-mark">Q</div> QMR KSS</div><p class="eyebrow">ยินดีต้อนรับ</p><h2>เข้าสู่ระบบผู้ตรวจประเมิน</h2><p class="muted">ใช้บัญชีที่ได้รับอนุมัติจากผู้ดูแลระบบ</p><label>ชื่อผู้ใช้<input id="username" autocomplete="username" value="admin" required></label><label>รหัสผ่าน<input id="password" type="password" autocomplete="current-password" required></label><button class="primary full" type="submit">เข้าสู่ระบบ <span>→</span></button><p id="loginError" class="error"></p><button id="showRegister" class="secondary full-width" type="button">สมัครสมาชิกใหม่</button><div id="demoHint" class="demo-hint">โหมดสาธิต: admin / demo</div></form>
-    <form id="registerForm" class="login-card register-card hidden"><div class="mobile-brand"><div class="brand-mark">Q</div> QMR KSS</div><p class="eyebrow">REQUEST ACCESS</p><h2>สมัครสมาชิก</h2><p class="muted">บัญชีจะเข้าใช้ได้หลังผู้ดูแลระบบอนุมัติ</p><div class="register-grid"><label>ชื่อ–สกุล<input id="regDisplayName" autocomplete="name" required></label><label>หน่วยงาน<input id="regDepartment" required placeholder="เช่น เวชระเบียน"></label></div><label>ชื่อผู้ใช้<input id="regUsername" autocomplete="username" required placeholder="a-z, 0-9 อย่างน้อย 3 ตัว"></label><div class="register-grid"><label>รหัสผ่าน<input id="regPassword" type="password" minlength="8" autocomplete="new-password" required></label><label>ยืนยันรหัสผ่าน<input id="regConfirm" type="password" minlength="8" autocomplete="new-password" required></label></div><button class="primary full" type="submit">ส่งคำขอสมัครสมาชิก <span>→</span></button><p id="registerError" class="error"></p><button id="backLogin" class="link-btn full-width" type="button">← กลับหน้าเข้าสู่ระบบ</button></form>
+    <div class="login-art"><div class="art-grain"></div><div class="login-brand"><div class="brand-mark">Q</div><span>QMR KSP</span></div><div class="login-copy"><p class="eyebrow light">MEDICAL RECORD QUALITY</p><h1>คุณภาพที่มองเห็น<br>การดูแลที่ดีขึ้น</h1><p>ระบบทบทวนคุณภาพเวชระเบียน โรงพยาบาลโคกศรีสุพรรณ</p></div><div class="privacy-note">ระบบภายใน • ข้อมูลผู้ป่วยได้รับการคุ้มครอง</div></div>
+    <form id="loginForm" class="login-card"><div class="mobile-brand"><div class="brand-mark">Q</div> QMR KSP</div><p class="eyebrow">ยินดีต้อนรับ</p><h2>เข้าสู่ระบบผู้ตรวจประเมิน</h2><p class="muted">ใช้บัญชีที่ได้รับอนุมัติจากผู้ดูแลระบบ</p><label>ชื่อผู้ใช้<input id="username" autocomplete="username" value="admin" required></label><label>รหัสผ่าน<input id="password" type="password" autocomplete="current-password" required></label><button class="primary full" type="submit">เข้าสู่ระบบ <span>→</span></button><p id="loginError" class="error"></p><button id="showRegister" class="secondary full-width" type="button">สมัครสมาชิกใหม่</button><div id="demoHint" class="demo-hint">โหมดสาธิต: admin / demo</div></form>
+    <form id="registerForm" class="login-card register-card hidden"><div class="mobile-brand"><div class="brand-mark">Q</div> QMR KSP</div><p class="eyebrow">REQUEST ACCESS</p><h2>สมัครสมาชิก</h2><p class="muted">บัญชีจะเข้าใช้ได้หลังผู้ดูแลระบบอนุมัติ</p><div class="register-grid"><label>ชื่อ–สกุล<input id="regDisplayName" autocomplete="name" required></label><label>หน่วยงาน<input id="regDepartment" required placeholder="เช่น เวชระเบียน"></label></div><label>ชื่อผู้ใช้<input id="regUsername" autocomplete="username" required placeholder="a-z, 0-9 อย่างน้อย 3 ตัว"></label><div class="register-grid"><label>รหัสผ่าน<input id="regPassword" type="password" minlength="8" autocomplete="new-password" required></label><label>ยืนยันรหัสผ่าน<input id="regConfirm" type="password" minlength="8" autocomplete="new-password" required></label></div><button class="primary full" type="submit">ส่งคำขอสมัครสมาชิก <span>→</span></button><p id="registerError" class="error"></p><button id="backLogin" class="link-btn full-width" type="button">← กลับหน้าเข้าสู่ระบบ</button></form>
   </section>
 
   <div id="app" class="app hidden">
     <aside class="sidebar">
-      <div class="logo"><div class="brand-mark">Q</div><div><b>QMR KSS</b><small>Medical Record Quality</small></div></div>
+      <div class="logo"><div class="brand-mark">Q</div><div><b>QMR KSP</b><small>Medical Record Quality</small></div></div>
       <nav>
         <button data-page="dashboard" class="nav-item active"><span>⌂</span> ภาพรวม</button>
         <p class="nav-label">งานตรวจประเมิน</p>

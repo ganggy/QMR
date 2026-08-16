@@ -417,7 +417,7 @@ const server=http.createServer(async(req,res)=>{
 
 server.listen(PORT,HOST,()=>{
   const mode=DEMO?'DEMO':'HOSxP';
-  console.log(`\nQMR KSS (${mode}) พร้อมใช้งาน`);
+  console.log(`\nQMR KSP (${mode}) พร้อมใช้งาน`);
   console.log(`เครื่องนี้: http://localhost:${PORT}`);
   console.log(`อุปกรณ์ในเครือข่าย: http://<IP-เครื่องนี้>:${PORT}\n`);
 });

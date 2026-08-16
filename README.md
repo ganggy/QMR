@@ -54,6 +54,12 @@ cd D:\QMR
 .\deploy-to-server.ps1 -Server 'user@server-ip' -Configure
 ```
 
+ครั้งต่อไปที่อัปเดตโค้ด ใช้คำสั่งสั้น ๆ โดยไม่ต้องตั้งค่าใหม่:
+
+```powershell
+.\deploy-to-server.ps1 -Server 'user@server-ip'
+```
+
 สคริปต์จะถามรหัส SSH จากหน้าจอโดยตรงและจะไม่บันทึกรหัสไว้ในโปรเจกต์ การ deploy จะหยุด process ที่รันจาก `/opt/qrm`, ลบ `/opt/qrm` เดิมทั้งหมด และติดตั้งใหม่ที่ `/opt/qmr`
 
 ครั้งแรกให้แก้ `/opt/qmr/.env` บน server ตาม `.env.production.example` แล้วรัน:

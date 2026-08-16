@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>QMR KSS • ระบบประเมินคุณภาพเวชระเบียน</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@300;400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <div id="toast" class="toast"></div>
+  <section id="login" class="login-shell">
+    <div class="login-art"><div class="art-grain"></div><div class="login-brand"><div class="brand-mark">Q</div><span>QMR KSS</span></div><div class="login-copy"><p class="eyebrow light">MEDICAL RECORD QUALITY</p><h1>คุณภาพที่มองเห็น<br>การดูแลที่ดีขึ้น</h1><p>ระบบทบทวนคุณภาพเวชระเบียน โรงพยาบาลโคกศรีสุพรรณ</p></div><div class="privacy-note">ระบบภายใน • ข้อมูลผู้ป่วยได้รับการคุ้มครอง</div></div>
+    <form id="loginForm" class="login-card"><div class="mobile-brand"><div class="brand-mark">Q</div> QMR KSS</div><p class="eyebrow">ยินดีต้อนรับ</p><h2>เข้าสู่ระบบผู้ตรวจประเมิน</h2><p class="muted">ใช้บัญชีที่ได้รับอนุมัติจากผู้ดูแลระบบ</p><label>ชื่อผู้ใช้<input id="username" autocomplete="username" value="admin" required></label><label>รหัสผ่าน<input id="password" type="password" autocomplete="current-password" required></label><button class="primary full" type="submit">เข้าสู่ระบบ <span>→</span></button><p id="loginError" class="error"></p><button id="showRegister" class="secondary full-width" type="button">สมัครสมาชิกใหม่</button><div id="demoHint" class="demo-hint">โหมดสาธิต: admin / demo</div></form>
+    <form id="registerForm" class="login-card register-card hidden"><div class="mobile-brand"><div class="brand-mark">Q</div> QMR KSS</div><p class="eyebrow">REQUEST ACCESS</p><h2>สมัครสมาชิก</h2><p class="muted">บัญชีจะเข้าใช้ได้หลังผู้ดูแลระบบอนุมัติ</p><div class="register-grid"><label>ชื่อ–สกุล<input id="regDisplayName" autocomplete="name" required></label><label>หน่วยงาน<input id="regDepartment" required placeholder="เช่น เวชระเบียน"></label></div><label>ชื่อผู้ใช้<input id="regUsername" autocomplete="username" required placeholder="a-z, 0-9 อย่างน้อย 3 ตัว"></label><div class="register-grid"><label>รหัสผ่าน<input id="regPassword" type="password" minlength="8" autocomplete="new-password" required></label><label>ยืนยันรหัสผ่าน<input id="regConfirm" type="password" minlength="8" autocomplete="new-password" required></label></div><button class="primary full" type="submit">ส่งคำขอสมัครสมาชิก <span>→</span></button><p id="registerError" class="error"></p><button id="backLogin" class="link-btn full-width" type="button">← กลับหน้าเข้าสู่ระบบ</button></form>
+  </section>
+
+  <div id="app" class="app hidden">
+    <aside class="sidebar">
+      <div class="logo"><div class="brand-mark">Q</div><div><b>QMR KSS</b><small>Medical Record Quality</small></div></div>
+      <nav>
+        <button data-page="dashboard" class="nav-item active"><span>⌂</span> ภาพรวม</button>
+        <p class="nav-label">งานตรวจประเมิน</p>
+        <button data-page="records" class="nav-item"><span>⌕</span> ค้นเวชระเบียน</button>
+        <button data-page="audits" class="nav-item"><span>✓</span> รายการประเมิน</button>
+        <button data-page="reports" class="nav-item"><span>⌁</span> รายงานคุณภาพ</button>
+        <p class="nav-label">ระบบ</p>
+        <button id="memberNav" data-page="members" class="nav-item"><span>♙</span> สมาชิกและสิทธิ์</button>
+        <button id="activityNav" data-page="activity" class="nav-item"><span>◷</span> ประวัติการใช้งาน</button>
+      </nav>
+      <div class="connection"><i></i><div><b id="connectionText">กำลังตรวจสอบ</b><small>HOSxP • 192.168.2.254</small></div></div>
+      <button id="logout" class="user-chip"><span class="avatar">QA</span><span><b id="currentUser">ผู้ตรวจประเมิน</b><small>ออกจากระบบ</small></span><span>↗</span></button>
+    </aside>
+    <main>
+      <header><button id="menuBtn" class="icon-btn menu-btn">☰</button><div><p id="breadcrumb">หน้าหลัก / ภาพรวม</p><h2 id="pageTitle">ภาพรวมคุณภาพเวชระเบียน</h2></div><div class="header-actions"><div class="date-pill" id="thaiDate"></div><button id="newAuditBtn" class="primary">＋ เริ่มประเมินใหม่</button></div></header>
+      <section id="page-dashboard" class="page active"></section>
+      <section id="page-records" class="page"></section>
+      <section id="page-audits" class="page"></section>
+      <section id="page-reports" class="page"></section>
+      <section id="page-members" class="page"></section>
+      <section id="page-activity" class="page"></section>
+      <section id="page-workspace" class="page"></section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body></html>

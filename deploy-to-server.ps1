@@ -1,0 +1,73 @@
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$Server,
+    [string]$RemoteRoot = '/opt/qrm'
+)
+
+$ErrorActionPreference = 'Stop'
+$projectPath = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location -LiteralPath $projectPath
+
+$archive = Join-Path $env:TEMP 'qmr-kss-deploy.tar.gz'
+$serverHost = ($Server -split '@')[-1]
+
+Write-Host 'Checking project...' -ForegroundColor Cyan
+& npm.cmd run check
+if ($LASTEXITCODE -ne 0) { throw 'Project check failed.' }
+
+if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+
+Write-Host 'Building deployment archive...' -ForegroundColor Cyan
+& tar.exe -czf $archive `
+    --exclude='./node_modules' `
+    --exclude='./.venv' `
+    --exclude='./__pycache__' `
+    --exclude='./qmr.db*' `
+    --exclude='./uploads' `
+    --exclude='./.env' `
+    --exclude='./deploy-to-server.ps1' `
+    .
+if ($LASTEXITCODE -ne 0) { throw 'Could not build deployment archive.' }
+
+try {
+    Write-Host 'Uploading package. Enter the SSH password when prompted.' -ForegroundColor Yellow
+    & scp.exe $archive "${Server}:/tmp/qmr-kss-deploy.tar.gz"
+    if ($LASTEXITCODE -ne 0) { throw 'Upload failed.' }
+
+    Write-Host 'Installing on server. Enter the SSH password again when prompted.' -ForegroundColor Yellow
+    $remoteCommand = @'
+set -e
+mkdir -p /opt/qrm /opt/qrm/data/uploads /opt/qrm/logs
+tar -xzf /tmp/qmr-kss-deploy.tar.gz -C /opt/qrm
+rm -f /tmp/qmr-kss-deploy.tar.gz
+cd /opt/qrm
+node_major=$(node -p "Number(process.versions.node.split('.')[0])" 2>/dev/null || echo 0)
+if [ "$node_major" -lt 22 ]; then
+  echo "ERROR: Node.js 22 or newer is required. Current: $(node --version 2>/dev/null || echo missing)"
+  exit 22
+fi
+npm ci --omit=dev
+if [ ! -f .env ]; then
+  cp .env.production.example .env
+  chmod 600 .env
+  echo "FIRST_SETUP_REQUIRED"
+  echo "Edit /opt/qrm/.env, then run: cd /opt/qrm && pm2 start ecosystem.config.cjs && pm2 save"
+  exit 23
+fi
+chmod 600 .env
+pm2 startOrReload ecosystem.config.cjs --update-env
+pm2 save
+pm2 status qmr-kss
+'@
+    & ssh.exe $Server $remoteCommand
+    if ($LASTEXITCODE -eq 23) {
+        Write-Host 'Code deployed. Configure /opt/qrm/.env on the server, then start PM2.' -ForegroundColor Yellow
+    }
+    elseif ($LASTEXITCODE -ne 0) { throw "Remote deployment failed with exit code $LASTEXITCODE." }
+    else {
+        Write-Host "Deployment complete: http://${serverHost}:3509" -ForegroundColor Green
+    }
+}
+finally {
+    if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive -Force }
+}

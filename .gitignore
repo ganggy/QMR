@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.env
+.env.production
+qmr.db
+qmr.db-shm
+qmr.db-wal
+uploads/*
+!uploads/.gitkeep

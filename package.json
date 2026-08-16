@@ -1,0 +1,17 @@
+{
+  "name": "qmr-kss",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ระบบประเมินคุณภาพเวชระเบียน โรงพยาบาลโคกศรีสุพรรณ",
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning server.mjs",
+    "dev": "node --watch --disable-warning=ExperimentalWarning server.mjs",
+    "check": "node --check server.mjs && node --check static/app.js"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "busboy": "1.6.0",
+    "mysql2": "3.23.3"
+  }
+}

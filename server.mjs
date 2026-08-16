@@ -137,7 +137,7 @@ async function hosQuery(sql,args=[]) {
 
 async function loadMedications(recordType, ref) {
   const key=recordType==='IPD'?'an':'vn';
-  const limit=recordType==='IPD'?150:100;
+  const limit=recordType==='IPD'?1000:200;
   return hosQuery(`
     SELECT
       oi.icode,
@@ -150,7 +150,9 @@ async function loadMedications(recordType, ref) {
       COALESCE(NULLIF(TRIM(du.name1), ''), NULLIF(TRIM(oi.drugusage), ''), '-') usage,
       oi.qty,
       oi.unitprice,
-      oi.item_type
+      oi.item_type,
+      COALESCE(oi.rxdate,oi.vstdate) event_date,
+      oi.rxtime event_time
     FROM opitemrece oi
     LEFT JOIN s_drugitems sd ON sd.icode=oi.icode
     LEFT JOIN nondrugitems ndi ON ndi.icode=oi.icode
@@ -162,6 +164,25 @@ async function loadMedications(recordType, ref) {
   `,[ref]);
 }
 
+async function loadLabs(vn, limit=500) {
+  if(!vn)return [];
+  return hosQuery(`
+    SELECT
+      lh.order_date date,
+      lh.order_time event_time,
+      li.lab_items_name name,
+      COALESCE(NULLIF(TRIM(lo.lab_order_result), ''), 'รอผล') result,
+      li.lab_items_normal_value normal_value,
+      lo.abnormal_result
+    FROM lab_head lh
+    JOIN lab_order lo ON lo.lab_order_number=lh.lab_order_number
+    JOIN lab_items li ON li.lab_items_code=lo.lab_items_code
+    WHERE lh.vn=?
+    ORDER BY lh.order_date,lh.order_time,li.display_order
+    LIMIT ${limit}
+  `,[vn]);
+}
+
 const DEMO_CASES=[
  {type:'OPD',ref_no:'690816001234',hn:'00010419',patient_name:'นางสาวอรุณี ใจดี',visit_date:'2026-08-16',department:'อายุรกรรม',doctor_name:'นพ.กิตติพงษ์',status:'รอประเมิน',risk:'ครบถ้วน 78%'},
  {type:'IPD',ref_no:'690001234',hn:'00028741',patient_name:'นายสมชาย พูนสุข',visit_date:'2026-08-12',department:'หอผู้ป่วยชาย',doctor_name:'พญ.ปาริชาติ',status:'กำลังประเมิน',risk:'ควรทบทวน'},
@@ -170,7 +191,11 @@ const DEMO_CASES=[
 ];
 function demoDetail(kind,ref) {
   const item=DEMO_CASES.find(x=>x.type===kind&&x.ref_no===ref)||DEMO_CASES[0];
-  return {...item,age:'42 ปี',sex:item.patient_name.includes('นาง')?'หญิง':'ชาย',rights:'สิทธิหลักประกันสุขภาพแห่งชาติ',chief_complaint:'ไข้ ไอ มีเสมหะ 2 วันก่อนมาโรงพยาบาล',present_illness:'2 วันก่อนมา มีไข้ต่ำ ไอมีเสมหะ ไม่มีหอบเหนื่อย รับประทานอาหารได้',vitals:{temperature:'37.8',pulse:'92',respiration:'20',bp:'128/76',weight:'58',height:'160'},diagnoses:[{code:'J06.9',name:'Acute upper respiratory infection, unspecified',type:'Principal'}],medications:[{name:'Paracetamol 500 mg',usage:'1 เม็ด เมื่อมีไข้ ทุก 6 ชั่วโมง',qty:'10'},{name:'Amoxicillin 500 mg',usage:'1 แคปซูล วันละ 3 ครั้ง หลังอาหาร',qty:'21'}],labs:[{name:'CBC',result:'WBC 8,900 /µL',date:item.visit_date}],timeline:[],admit:kind==='IPD'?{regdate:'2026-08-12',dchdate:'2026-08-15',los:'3',ward:item.department}:null};
+  const addDays=(date,days)=>new Date(new Date(`${date}T00:00:00Z`).getTime()+days*86400000).toISOString().slice(0,10);
+  const medications=[{name:'Paracetamol 500 mg',usage:'1 เม็ด เมื่อมีไข้ ทุก 6 ชั่วโมง',qty:'10',event_date:item.visit_date},{name:'Amoxicillin 500 mg',usage:'1 แคปซูล วันละ 3 ครั้ง หลังอาหาร',qty:'21',event_date:kind==='IPD'?addDays(item.visit_date,1):item.visit_date}];
+  const labs=[{name:'CBC',result:'WBC 8,900 /µL',date:kind==='IPD'?addDays(item.visit_date,2):item.visit_date}];
+  const timeline=kind==='IPD'?[{event_date:item.visit_date,event_time:'10:15',title:'รับผู้ป่วยเข้า Admit',detail:item.department},{event_date:addDays(item.visit_date,2),event_time:'09:30',title:'ย้ายเตียง/หอผู้ป่วย',detail:'ติดตามอาการต่อเนื่อง'},{event_date:addDays(item.visit_date,3),event_time:'',title:'จำหน่ายผู้ป่วย',detail:'ระยะเวลานอน 3 วัน'}]:[];
+  return {...item,age:'42 ปี',sex:item.patient_name.includes('นาง')?'หญิง':'ชาย',rights:'สิทธิหลักประกันสุขภาพแห่งชาติ',chief_complaint:'ไข้ ไอ มีเสมหะ 2 วันก่อนมาโรงพยาบาล',present_illness:'2 วันก่อนมา มีไข้ต่ำ ไอมีเสมหะ ไม่มีหอบเหนื่อย รับประทานอาหารได้',vitals:{temperature:'37.8',pulse:'92',respiration:'20',bp:'128/76',weight:'58',height:'160'},diagnoses:[{code:'J06.9',name:'Acute upper respiratory infection, unspecified',type:'Principal'}],medications,labs,timeline,admit:kind==='IPD'?{regdate:item.visit_date,dchdate:addDays(item.visit_date,3),los:'3',ward:item.department}:null};
 }
 
 async function listCases(url) {
@@ -197,11 +222,17 @@ async function caseDetail(kind,ref){
     if(!base.length)throw Object.assign(new Error('ไม่พบ VN'),{status:404}); const r=base[0]; r.vitals={temperature:r.temperature,pulse:r.pulse,respiration:r.respiration,bp:r.bp,weight:r.weight,height:r.height}; for(const k of Object.keys(r.vitals))delete r[k];
     r.diagnoses=await hosQuery("SELECT od.icd10 code,COALESCE(ic.name,'') name,od.diagtype type FROM ovstdiag od LEFT JOIN icd101 ic ON ic.code=od.icd10 WHERE od.vn=?",[ref]);
     r.medications=await loadMedications('OPD',ref);
-    r.labs=await hosQuery('SELECT lh.lab_order_number name,lh.order_date date,lh.report_date result FROM lab_head lh WHERE lh.vn=? ORDER BY lh.order_date DESC LIMIT 50',[ref]); r.timeline=[]; return r;
+    r.labs=await loadLabs(ref,200); r.timeline=[]; return r;
   }
-  const base=await hosQuery(`SELECT 'IPD' type,i.an ref_no,i.hn,CONCAT(p.pname,p.fname,' ',p.lname) patient_name,TIMESTAMPDIFF(YEAR,p.birthday,CURDATE()) age,p.sex,i.regdate visit_date,COALESCE(w.name,'IPD') department,COALESCE(d.name,'-') doctor_name,COALESCE(pt.name,'-') rights,i.regdate,i.dchdate,DATEDIFF(COALESCE(i.dchdate,CURDATE()),i.regdate) los FROM ipt i JOIN patient p ON p.hn=i.hn LEFT JOIN ward w ON w.ward=i.ward LEFT JOIN doctor d ON d.code=i.admdoctor LEFT JOIN pttype pt ON pt.pttype=i.pttype WHERE i.an=? LIMIT 1`,[ref]);
-  if(!base.length)throw Object.assign(new Error('ไม่พบ AN'),{status:404}); const r=base[0];r.admit={regdate:r.regdate,dchdate:r.dchdate,los:r.los};delete r.regdate;delete r.dchdate;delete r.los;Object.assign(r,{chief_complaint:'ดูรายละเอียดจากเอกสาร IPD',present_illness:'',vitals:{},labs:[],timeline:[]});
-  r.diagnoses=await hosQuery("SELECT id.icd10 code,COALESCE(ic.name,'') name,id.diagtype type FROM iptdiag id LEFT JOIN icd101 ic ON ic.code=id.icd10 WHERE id.an=?",[ref]); r.medications=await loadMedications('IPD',ref);return r;
+  const base=await hosQuery(`SELECT 'IPD' type,i.an ref_no,i.hn,i.vn admit_vn,CONCAT(p.pname,p.fname,' ',p.lname) patient_name,TIMESTAMPDIFF(YEAR,p.birthday,CURDATE()) age,p.sex,i.regdate visit_date,COALESCE(w.name,'IPD') department,COALESCE(d.name,'-') doctor_name,COALESCE(pt.name,'-') rights,i.regdate,i.dchdate,DATEDIFF(COALESCE(i.dchdate,CURDATE()),i.regdate) los FROM ipt i JOIN patient p ON p.hn=i.hn LEFT JOIN ward w ON w.ward=i.ward LEFT JOIN doctor d ON d.code=i.admdoctor LEFT JOIN pttype pt ON pt.pttype=i.pttype WHERE i.an=? LIMIT 1`,[ref]);
+  if(!base.length)throw Object.assign(new Error('ไม่พบ AN'),{status:404}); const r=base[0],admitVn=r.admit_vn;r.admit={regdate:r.regdate,dchdate:r.dchdate,los:r.los};delete r.regdate;delete r.dchdate;delete r.los;delete r.admit_vn;Object.assign(r,{chief_complaint:'ดูรายละเอียดจากเอกสาร IPD',present_illness:'',vitals:{},labs:[],timeline:[]});
+  r.diagnoses=await hosQuery("SELECT id.icd10 code,COALESCE(ic.name,'') name,id.diagtype type FROM iptdiag id LEFT JOIN icd101 ic ON ic.code=id.icd10 WHERE id.an=?",[ref]);
+  r.medications=await loadMedications('IPD',ref);
+  r.labs=await loadLabs(admitVn);
+  r.timeline=await hosQuery(`SELECT bm.movedate event_date,bm.movetime event_time,'ย้ายเตียง/หอผู้ป่วย' title,CONCAT(COALESCE(ow.name,bm.oward,'-'),' เตียง ',COALESCE(bm.obedno,'-'),' → ',COALESCE(nw.name,bm.nward,'-'),' เตียง ',COALESCE(bm.nbedno,'-'),CASE WHEN COALESCE(bm.movereason,'')='' THEN '' ELSE CONCAT(' • ',bm.movereason) END) detail FROM iptbedmove bm LEFT JOIN ward ow ON ow.ward=bm.oward LEFT JOIN ward nw ON nw.ward=bm.nward WHERE bm.an=? ORDER BY bm.movedate,bm.movetime`,[ref]);
+  r.timeline.unshift({event_date:r.admit.regdate,event_time:'',title:'รับผู้ป่วยเข้า Admit',detail:r.department});
+  if(r.admit.dchdate)r.timeline.push({event_date:r.admit.dchdate,event_time:'',title:'จำหน่ายผู้ป่วย',detail:`ระยะเวลานอน ${r.admit.los} วัน`});
+  return r;
 }
 
 function staticFile(req,res,path) {

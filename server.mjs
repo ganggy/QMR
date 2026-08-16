@@ -170,11 +170,11 @@ async function loadItemCatalogs(icodes) {
 async function loadUsageCatalog(codes) {
   const unique=[...new Set(codes.map(code=>String(code||'').trim()).filter(Boolean))];
   if(!unique.length)return new Map();
-  const rows=await optionalHos('drug-usage',()=>hosQuery(`SELECT * FROM drugusage WHERE code IN (${unique.map(()=>'?').join(',')})`,unique));
+  const rows=await optionalHos('drug-usage',()=>hosQuery(`SELECT * FROM drugusage WHERE drugusage IN (${unique.map(()=>'?').join(',')})`,unique));
   const result=new Map();
   for(const row of rows){
     const fields=Object.fromEntries(Object.entries(row).map(([key,value])=>[key.toLowerCase(),String(value??'').trim()]));
-    const code=fields.code;
+    const code=fields.drugusage;
     const lines=['name1','name2','name3','name4'].map(key=>fields[key]).filter(Boolean);
     const alternate=['full_name','usage_name','description','shortlist','name','display_name'].map(key=>fields[key]).find(Boolean);
     const text=(lines.join(' ')||alternate||'').replace(/\s+/g,' ').trim();
